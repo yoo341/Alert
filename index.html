@@ -1,0 +1,126 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220"><title>Alert - Fish Disease Early Warning</title>
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root{--bg:#0b1220;--card:#141d30;--tx:#e8eef9;--mu:#8fa0bd;--g:#22c55e;--y:#facc15;--o:#fb923c;--r:#ef4444;--lv:var(--g)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px system-ui,sans-serif;padding:env(safe-area-inset-top) 0 calc(64px + env(safe-area-inset-bottom))}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px}header b{font-size:20px;letter-spacing:2px}header b span{color:var(--lv)}
+#banner{margin:0 12px;padding:18px;border-radius:14px;background:color-mix(in srgb,var(--lv) 18%,var(--card));border:2px solid var(--lv)}
+#banner h2{margin:0;font-size:24px;color:var(--lv)}#banner p{margin:6px 0 0;color:var(--tx)}
+.pulse{animation:p 1s infinite alternate}@keyframes p{to{box-shadow:0 0 22px var(--lv)}}
+main{padding:12px}section{display:none}section.on{display:block}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.c{background:var(--card);border-radius:12px;padding:12px;border-left:5px solid var(--g)}
+.c.s1{border-color:var(--y)}.c.s2{border-color:var(--r)}.c small{color:var(--mu)}.c div{font-size:24px;font-weight:700}
+h3{margin:16px 0 6px}ul{padding-left:18px;margin:6px 0}
+input,select,textarea,button{width:100%;padding:12px;margin:5px 0;border-radius:10px;border:1px solid #2a3a5c;background:#0f172a;color:var(--tx);font:inherit}
+button{background:#2563eb;border:0;font-weight:700}button.alt{background:#334155}button.red{background:var(--r)}
+label{color:var(--mu);font-size:13px}#map{height:55vh;border-radius:12px}
+.cam{background:var(--card);border-radius:12px;padding:8px;margin:8px 0}.cam img,.cam video{width:100%;border-radius:8px;background:#000;min-height:120px}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#0f172a;border-top:1px solid #1e2b47;padding-bottom:env(safe-area-inset-bottom)}
+nav a{flex:1;text-align:center;padding:12px 2px;color:var(--mu);font-size:12px}nav a.on{color:var(--tx);border-top:3px solid var(--lv)}
+</style></head><body>
+<header><b>AL<span>E</span>RT</b><small id="clock"></small><button id="inst" style="display:none;width:auto;padding:8px 14px;margin:0">Install app</button></header>
+<div id="banner"><h2 id="lvt">LEVEL 1 - NORMAL</h2><p id="lvm">All parameters within safe range.</p></div>
+<main>
+<section id="monitor" class="on"><h3>Live water quality</h3><div class="grid" id="tiles"></div>
+<h3>Disease risk</h3><ul id="risks"></ul>
+<small id="src" style="color:var(--mu)"></small>
+<button class="alt" onclick="sim()">Simulate outbreak (demo)</button></section>
+
+<section id="dx"><h3>Fish condition diagnosis</h3>
+<small style="color:var(--mu)">Tick what you see. Combined with live water readings to suggest likely conditions.</small>
+<div id="symp" style="display:grid;gap:8px;margin:10px 0"></div>
+<label>Mortality in last 24h</label><select id="mo" onchange="diagnose()"><option>None</option><option>Under 1%</option><option>1-5%</option><option>Over 5% (heavy)</option></select>
+<div id="dxout"></div>
+<button onclick="send('wa')">Send diagnosis + data via WhatsApp</button><button class="alt" onclick="send('sms')">Send via SMS</button>
+<small style="color:var(--mu)">Preliminary guide only. Confirm with a vet or lab test before treating.</small></section>
+<section id="cams"><h3>Cameras</h3><div id="camlist"></div>
+<label>Camera name</label><input id="cn" placeholder="Pond 1">
+<label>MJPEG / snapshot URL</label><input id="cu" placeholder="http://192.168.1.50:8080/video">
+<button onclick="addCam()">Add camera</button><button class="alt" onclick="phoneCam()">Use this phone's camera</button></section>
+
+<section id="mapv"><h3>Farm location</h3><div id="map"></div>
+<button onclick="locate()">Update my farm location (GPS)</button><small id="loc" style="color:var(--mu)"></small></section>
+
+<section id="req"><h3>Request service</h3>
+<label>Farm name</label><input id="fn" placeholder="Your farm / pond name">
+<label>Problem</label><select id="pr"><option>Fish dying / mortality</option><option>Abnormal behaviour / gasping</option><option>Skin lesions / fungus</option><option>Water quality problem</option><option>Need vet visit</option><option>Other</option></select>
+<label>Urgency</label><select id="ur"><option>Routine</option><option>Urgent</option><option>EMERGENCY</option></select>
+<label>Notes</label><textarea id="nt" rows="3"></textarea>
+<button onclick="send('wa')">Send via WhatsApp</button><button class="alt" onclick="send('sms')">Send via SMS</button>
+<small style="color:var(--mu)">Location, alert level and live readings are attached automatically.</small></section>
+
+<section id="set"><h3>Settings</h3>
+<label>Service number (country code, no + or 0)</label><input id="ph">
+<label>Sensor feed URL (JSON: {temp,ph,do,nh3,turb}) - empty = demo data</label><input id="fu" placeholder="http://192.168.1.60/data.json">
+<button onclick="saveSet()">Save</button><button class="alt" onclick="Notification.requestPermission()">Enable notifications</button></section>
+</main>
+<nav><a class="on" data-t="monitor">Monitor</a><a data-t="dx">Diagnose</a><a data-t="cams">Cameras</a><a data-t="mapv">Map</a><a data-t="req">Request</a><a data-t="set">Settings</a></nav>
+<script>
+const $=id=>document.getElementById(id),S=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},W=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+let cfg=Object.assign({phone:"233547636057",feed:""},S("cfg",{})),pos=S("pos",{lat:5.6037,lng:-0.187}),cams=S("cams",[]),d={temp:28,ph:7.4,do:6,nh3:.2,turb:20},last=1;
+// thresholds: [warnLow,warnHigh,dangerLow,dangerHigh]
+const T={temp:["Temperature","°C",24,32,20,34],ph:["pH","",6.5,8.5,6,9],do:["Dissolved O2","mg/L",4,99,3,99],nh3:["Ammonia","mg/L",-1,.5,-1,1],turb:["Turbidity","NTU",-1,50,-1,100]};
+const sev=(k,v)=>{const t=T[k];return v<t[4]||v>t[5]?2:v<t[2]||v>t[3]?1:0};
+const LV=[["LEVEL 1 - NORMAL","All parameters within safe range.","#22c55e"],["LEVEL 2 - WATCH","One parameter outside ideal range. Monitor closely.","#facc15"],["LEVEL 3 - WARNING","Multiple stress factors. Disease outbreak risk rising.","#fb923c"],["LEVEL 4 - CRITICAL","Immediate danger to fish. Request service now.","#ef4444"]];
+function render(){const s=Object.keys(T).map(k=>sev(k,d[k])),mx=Math.max(...s),sum=s.reduce((a,b)=>a+b,0);
+ const lv=mx==2?3:sum>=2?2:sum==1?1:0;
+ document.documentElement.style.setProperty("--lv",LV[lv][2]);$("lvt").textContent=LV[lv][0];$("lvm").textContent=LV[lv][1];$("banner").className=lv>=2?"pulse":"";
+ $("tiles").innerHTML=Object.keys(T).map((k,i)=>`<div class="c s${s[i]}"><small>${T[k][0]}</small><div>${(+d[k]).toFixed(1)} ${T[k][1]}</div></div>`).join("");
+ const r=[];if(sev("do",d.do))r.push("Low oxygen: hypoxia stress, gill disease and columnaris risk. Aerate now.");
+ if(sev("nh3",d.nh3))r.push("High ammonia: gill damage, secondary bacterial infection. Reduce feeding, change water.");
+ if(sev("temp",d.temp))r.push(d.temp<T.temp[2]?"Cold water: fungal (Saprolegnia) risk.":"Hot water: Aeromonas and Streptococcus risk.");
+ if(sev("ph",d.ph))r.push("pH out of range: stress and parasite susceptibility.");
+ if(sev("turb",d.turb))r.push("High turbidity: poor feeding, gill irritation.");
+ $("risks").innerHTML=(r.length?r:["No disease risk indicators detected."]).map(x=>"<li>"+x+"</li>").join("");
+ if(lv>last&&lv>=2){navigator.vibrate&&navigator.vibrate([300,100,300]);try{new Notification("ALERT: "+LV[lv][0],{body:LV[lv][1],icon:"icon.svg"})}catch(e){}}last=lv;window.LVN=lv;try{diagnose()}catch(e){}}
+async function tick(){if(cfg.feed){try{const j=await (await fetch(cfg.feed,{cache:"no-store"})).json();Object.assign(d,j);$("src").textContent="Live sensor feed";}catch(e){$("src").textContent="Sensor feed unreachable"}}
+ else{const j=(v,a,lo,hi)=>Math.min(hi,Math.max(lo,v+(Math.random()-.5)*a));d.temp=j(d.temp,.4,18,38);d.ph=j(d.ph,.1,5,10);d.do=j(d.do,.3,1,9);d.nh3=j(d.nh3,.05,0,2);d.turb=j(d.turb,3,5,150);$("src").textContent="Demo data (no sensor feed set)"}
+ render()}
+function sim(){cfg.feed="";Object.assign(d,{temp:33.5,do:2.4,nh3:1.2,ph:6.8,turb:70});render()}
+// diagnostics
+const SY={gasp:"Gasping at surface",lethargy:"Sluggish / lethargic",erratic:"Erratic or spiral swimming",offfeed:"Off feed",flash:"Flashing / rubbing on surfaces",spots:"White spots on skin/fins",cotton:"Cotton-like growth",sores:"Red sores / ulcers",finrot:"Frayed / rotting fins",popeye:"Bulging eyes",belly:"Swollen belly",gills:"Pale or eroded gills",saddle:"Grey-white patches / saddle lesion",mass:"Sudden mass deaths"};
+const WL={lowdo:"low oxygen",hinh3:"high ammonia",hot:"high temp",cold:"low temp",phbad:"abnormal pH",turb:"high turbidity"};
+const DX=[
+["Oxygen stress (hypoxia)",["gasp","lethargy","offfeed","mass"],["lowdo","hot"],"Aerate now, stop feeding, cut stocking density, exchange water."],
+["Ammonia / nitrite toxicity",["gasp","gills","lethargy","erratic","sores"],["hinh3","phbad","lowdo"],"Stop feeding, water exchange, check filtration, test ammonia and nitrite."],
+["Columnaris (Flavobacterium)",["saddle","finrot","gills","sores","lethargy"],["hot","lowdo"],"Lower stress and temperature, improve oxygen, vet-guided antibiotic or salt dip."],
+["Aeromonas septicaemia",["sores","belly","popeye","finrot","lethargy"],["hot","hinh3"],"Isolate sick fish, improve water quality, lab test and vet-guided treatment."],
+["Streptococcosis",["popeye","erratic","belly","mass","lethargy"],["hot","lowdo"],"Reduce temperature stress and feeding, remove dead fish, urgent vet/lab confirmation."],
+["Ich (white spot)",["spots","flash","gasp"],["cold"],"Raise temperature gently where suitable, salt treatment as advised, quarantine."],
+["Fungal infection (Saprolegnia)",["cotton","sores"],["cold","hinh3"],"Remove affected fish, salt bath, avoid injuries and cold shocks."],
+["Gill parasites / flukes",["flash","gasp","gills","offfeed"],["turb","phbad"],"Microscope check of gills, improve water, vet-advised antiparasitic."]];
+const conf=n=>n>=6?"High":n>=3?"Moderate":"Low";
+function diagnose(){const sel=[...document.querySelectorAll("#symp input:checked")].map(i=>i.value),
+ f={lowdo:d.do<T.do[2],hinh3:d.nh3>T.nh3[3],hot:d.temp>T.temp[3],cold:d.temp<T.temp[2],phbad:sev("ph",d.ph)>0,turb:sev("turb",d.turb)>0};
+ const r=DX.map(x=>{const ms=x[1].filter(k=>sel.includes(k)),mw=x[2].filter(k=>f[k]);return{n:x[0],tip:x[3],ms,mw,sc:ms.length*2+mw.length}}).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc).slice(0,3);
+ window.DXR={r,sel,mort:$("mo").value};
+ $("dxout").innerHTML=r.length?r.map(a=>`<div class="c s${a.sc>=6?2:a.sc>=3?1:0}" style="margin:8px 0"><b>${a.n}</b> - ${conf(a.sc)} match<br><small>Signs: ${a.ms.map(k=>SY[k]).join(", ")||"none"} | Water: ${a.mw.map(k=>WL[k]).join(", ")||"normal"}</small><p style="margin:6px 0 0">${a.tip}</p></div>`).join(""):"<p>No clear match. Tick the signs you observe.</p>";}
+function dxText(){diagnose();const x=window.DXR;return `Symptoms: ${x.sel.map(k=>SY[k]).join(", ")||"none reported"}\nMortality 24h: ${x.mort}\nSuspected: ${x.r.map(a=>a.n+" ("+conf(a.sc)+")").join("; ")||"no clear match"}`}
+$("symp").innerHTML=Object.keys(SY).map(k=>`<label style="display:flex;gap:10px;align-items:center;color:var(--tx);font-size:15px"><input type="checkbox" value="${k}" onchange="diagnose()" style="width:auto;margin:0">${SY[k]}</label>`).join("");
+// tabs
+document.querySelectorAll("nav a").forEach(a=>a.onclick=()=>{document.querySelectorAll("nav a,section").forEach(e=>e.classList.remove("on"));a.classList.add("on");$(a.dataset.t).classList.add("on");if(a.dataset.t=="mapv")setTimeout(()=>map.invalidateSize(),50)});
+// map
+const map=L.map("map").setView([pos.lat,pos.lng],15);L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(map);
+let mk=L.marker([pos.lat,pos.lng]).addTo(map).bindPopup("Your farm"),ci=L.circle([pos.lat,pos.lng],{radius:500}).addTo(map);
+function mapUpd(){mk.setLatLng([pos.lat,pos.lng]);ci.setLatLng([pos.lat,pos.lng]).setStyle({color:LV[window.LVN||0][2],fillOpacity:.2});map.setView([pos.lat,pos.lng],15);$("loc").textContent=` ${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}`}
+function locate(){navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>{pos={lat:p.coords.latitude,lng:p.coords.longitude};W("pos",pos);mapUpd()},()=>alert("Location permission denied"),{enableHighAccuracy:true}):alert("GPS not supported")}
+// cameras
+function drawCams(){$("camlist").innerHTML=cams.length?cams.map((c,i)=>`<div class="cam"><b>${c.name}</b><img src="${c.url}" alt="stream" onerror="this.alt='Stream offline'"><button class="alt" onclick="cams.splice(${i},1);W('cams',cams);drawCams()">Remove</button></div>`).join(""):"<small>No cameras yet.</small>"}
+function addCam(){if(!$("cu").value)return;cams.push({name:$("cn").value||"Camera",url:$("cu").value});W("cams",cams);drawCams()}
+async function phoneCam(){try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});const v=document.createElement("video");v.srcObject=s;v.autoplay=v.playsInline=v.muted=true;const w=document.createElement("div");w.className="cam";w.innerHTML="<b>Phone camera</b>";w.appendChild(v);$("camlist").prepend(w)}catch(e){alert("Camera unavailable")}}
+// service request
+function send(m){const msg=`ALERT SERVICE REQUEST\nFarm: ${$("fn").value||"-"}\nProblem: ${$("pr").value}\nUrgency: ${$("ur").value}\nStatus: ${LV[window.LVN||0][0]}\nTemp ${d.temp.toFixed(1)}C, pH ${d.ph.toFixed(1)}, DO ${d.do.toFixed(1)}, NH3 ${d.nh3.toFixed(2)}\n${dxText()}\nLocation: https://maps.google.com/?q=${pos.lat},${pos.lng}\nNotes: ${$("nt").value||"-"}`;
+ location.href=m=="wa"?`https://wa.me/${cfg.phone}?text=${encodeURIComponent(msg)}`:`sms:+${cfg.phone}?&body=${encodeURIComponent(msg)}`}
+function saveSet(){cfg.phone=$("ph").value.replace(/\D/g,"").replace(/^2330/,"233");cfg.feed=$("fu").value.trim();W("cfg",cfg);$("ph").value=cfg.phone;alert("Saved")}
+$("ph").value=cfg.phone;$("fu").value=cfg.feed;drawCams();mapUpd();tick();setInterval(tick,5000);setInterval(()=>$("clock").textContent=new Date().toLocaleTimeString(),1000);
+let ip;const inst=$("inst");
+if(!(matchMedia("(display-mode: standalone)").matches||navigator.standalone))inst.style.display="block";
+addEventListener("beforeinstallprompt",e=>{e.preventDefault();ip=e});
+inst.onclick=async()=>{if(ip){ip.prompt();await ip.userChoice;ip=null}else alert("To install: tap the Chrome menu (3 dots), then 'Install app' or 'Add to Home screen'.")};
+addEventListener("appinstalled",()=>inst.style.display="none");
+if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js");
+</script></body></html>
